@@ -1,55 +1,99 @@
 import http from 'http';
+import EventEmitter from 'events';
+import { Router } from './Router.js';
 
 export class Application {
-    /** @property {object | array} */
-    #body;
+  /** @type {*} */
+  #body;
 
-    /** @property {number} */
-    #port;
+  /** @type {number} */
+  #port;
 
-    /** @property {http.Server} */
-    #server;
+  /** @type {http.Server} */
+  #server;
 
-    /** @property {boolean} */
-    #isDevEnv;
+  /** @type {boolean} */
+  #isDevEnv;
 
-    constructor() {
-        this.#body = null;
-        this.#port = Number(process.env.PORT) || 3000;
-        this.#server = this.#createServer();
-        this.#isDevEnv = process.env.NODE_ENV === 'development';
+  /** @type {EventEmitter} */
+  #emitter;
+
+  constructor() {
+    this.#body = undefined;
+    this.#emitter = new EventEmitter();
+    this.#port = Number(process.env.PORT) || 3000;
+    this.#server = this.#createServer();
+    this.#isDevEnv = process.env.NODE_ENV === 'development';
+  }
+
+  /**
+   * @param {Router} router
+   */
+  addRouter(router) {
+    const endpoints = router.getEndpoints();
+    for (let endpoint of endpoints) {
+      for (let handler of endpoint.handlers) {
+        this.#emitter.on(this.#getRouteMask(endpoint.path, handler.method), (request, response) => {
+          handler.handler({ request, response, body: this.#body });
+          this.#body = undefined;
+        });
+      }
+    }
+  }
+
+  /**
+   * @param {string} path
+   * @param {string} httpMethod
+   * @return {string}
+   */
+  #getRouteMask(path, httpMethod) {
+    return `[${path}]:[${httpMethod}]`;
+  }
+
+  /** @return {http.Server} */
+  #createServer() {
+    return http.createServer((req, res) => this.#serverHandler(req, res));
+  }
+
+  /**@return void */
+  listen() {
+    this.#server.listen(this.#port, () => console.log(`server started on port: ${this.#port}`));
+  }
+
+  /**
+   * @async
+   * @param {http.IncomingMessage} req
+   * @param {http.ServerResponse} res
+   * @return void
+   */
+  async #serverHandler(req, res) {
+    let eventName = '';
+    console.log(req.listeners);
+    if (req.method === 'POST') {
+      await this.#readBody(req);
     }
 
-    #createServer() {
-        return http.createServer((req, res) => this.#serverHandler(req, res));
+    if (req?.url && req?.method) {
+      eventName = this.#getRouteMask(req.url, req.method);
     }
-    listen() {
-        this.#server.listen(this.#port, () => console.log(`server started on port: ${this.#port}`));
+    /** @event [url]:[method] */
+    const emitted = this.#emitter.emit(eventName, req, res);
+    if (!emitted) {
+      res.writeHead(404, { 'Content-Type': 'text/html' });
+      res.end('<html><body><h1>Not Found</h1></body></html>');
     }
+  }
 
-    /**
-     * @param {http.IncomingMessage} req
-     * @param {http.ServerResponse} res
-     */
-    async #serverHandler(req, res) {
-        if (req.method === 'POST') {
-            await this.#readBody(req);
-            res.end();
-        } else {
-            res.setHeader('Content-Type', 'application/json;charset=utf-8');
-            res.statusCode = 401;
-            res.end('Request Method Invalid');
-        }
-
+  /**
+   * @async
+   * @param {http.IncomingMessage} req
+   * */
+  async #readBody(req) {
+    const buffers = [];
+    let body = null;
+    for await (const chunk of req) {
+      buffers.push(chunk);
     }
-
-    async #readBody(req) {
-        const buffers = [];
-        let body = null;
-        for await (const chunk of req) {
-            buffers.push(chunk);
-        }
-        body = JSON.parse(Buffer.concat(buffers).toString());
-        console.log(body);
-    }
+    this.#body = JSON.parse(Buffer.concat(buffers).toString());
+  }
 }
