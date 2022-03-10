@@ -1,6 +1,7 @@
 import http from 'http';
 import EventEmitter from 'events';
 import { Router } from './Router.js';
+import { URLSearchParams } from 'url';
 
 export class Application {
   /** @type {*} */
@@ -18,6 +19,9 @@ export class Application {
   /** @type {EventEmitter} */
   #emitter;
 
+  /** @type {URLSearchParams} */
+  #params;
+
   constructor() {
     this.#body = undefined;
     this.#emitter = new EventEmitter();
@@ -33,8 +37,9 @@ export class Application {
     const endpoints = router.getEndpoints();
     for (let endpoint of endpoints) {
       for (let handler of endpoint.handlers) {
-        this.#emitter.on(this.#getRouteMask(endpoint.path, handler.method), (request, response) => {
-          handler.handler({ request, response, body: this.#body });
+        const eventName = this.#getRouteMask(endpoint.path, handler.method);
+        this.#emitter.on(eventName, (request, response) => {
+          handler.handler({ request, response, body: this.#body, params: this.#params });
           this.#body = undefined;
         });
       }
@@ -68,12 +73,12 @@ export class Application {
    */
   async #serverHandler(req, res) {
     let eventName = '';
-    console.log(req.listeners);
     if (req.method === 'POST') {
       await this.#readBody(req);
     }
 
     if (req?.url && req?.method) {
+      await this.#createGetParams(req.url);
       eventName = this.#getRouteMask(req.url, req.method);
     }
     /** @event [url]:[method] */
@@ -86,11 +91,21 @@ export class Application {
 
   /**
    * @async
+   * @param {string} url
+   */
+  async #createGetParams(url) {
+    const getParams = url.split('?');
+    if (Array.isArray(getParams) && getParams[1]) {
+      this.#params = new URLSearchParams(getParams[1]);
+    }
+  }
+
+  /**
+   * @async
    * @param {http.IncomingMessage} req
    * */
   async #readBody(req) {
     const buffers = [];
-    let body = null;
     for await (const chunk of req) {
       buffers.push(chunk);
     }

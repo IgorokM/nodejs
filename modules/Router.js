@@ -17,7 +17,7 @@ import http from 'http';
  * @property {http.IncomingMessage} request
  * @property {http.ServerResponse} response
  * @property {Object| Array} [body]
- * @property {string} [params]
+ * @property {URLSearchParams} [params]
  */
 
 /**
