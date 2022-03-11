@@ -1,4 +1,4 @@
-import { Application } from "./modules/Application.js";
+import { Application } from './lib/Application.js';
 import { router } from './mainRouters.js';
 
 const app = new Application();
